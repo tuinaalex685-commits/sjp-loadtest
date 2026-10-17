@@ -1,0 +1,3 @@
+# Un scénario par ligne : chemin du script, puis options k6 éventuelles.
+k6/01-pages-publiques.js
+k6/02-tempete-connexion.js

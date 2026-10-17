@@ -1,0 +1,52 @@
+name: k6
+on:
+  push:
+    branches: [main]
+    paths: ['run.txt', 'k6/**', '.github/workflows/k6.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: k6
+  cancel-in-progress: false
+
+jobs:
+  k6:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer k6
+        run: |
+          curl -sL https://github.com/grafana/k6/releases/download/v2.2.0/k6-v2.2.0-linux-amd64.tar.gz | tar xz
+          sudo mv k6-v2.2.0-linux-amd64/k6 /usr/local/bin/k6
+          k6 version
+
+      - name: Lancer les scénarios de run.txt
+        run: |
+          ulimit -n 65536 || true
+          mkdir -p results
+          stamp=$(date -u +%Y%m%d-%H%M%S)
+          while read -r script args; do
+            [ -z "$script" ] && continue
+            case "$script" in \#*) continue;; esac
+            name=$(basename "$script" .js)
+            echo "::group::$script $args"
+            k6 run --no-color --summary-trend-stats "avg,med,p(90),p(95),p(99),max" \
+              --summary-export "results/$stamp-$name.json" $args "$script" < /dev/null 2>&1 \
+              | tee "results/$stamp-$name.txt" || true
+            echo "::endgroup::"
+          done < run.txt
+
+      - name: Renvoyer les résultats dans le dépôt
+        if: always()
+        run: |
+          git config user.name "k6-bot"
+          git config user.email "k6-bot@users.noreply.github.com"
+          git add results
+          git commit -m "résultats k6 $(date -u +%FT%TZ)" || exit 0
+          git pull --rebase
+          git push
